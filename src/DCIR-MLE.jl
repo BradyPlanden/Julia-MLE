@@ -1,4 +1,9 @@
-using JLD2, DataFrames, Distributions, Optim, Plots, StatsFuns, BenchmarkTools, SPGBox, ForwardDiff, PGFPlotsX, Colors
+using JLD2, DataFrames, Distributions, Plots, BenchmarkTools, SPGBox, ForwardDiff, PGFPlotsX, Colors
+"""
+This script computes the maximum likelihood estimation for polynomial coefficients of second-order 
+given an experimental battery dataset capturing DCIR for multiple cycles.  
+
+"""
 
 # Import Data -> DataFrame
 df = load("data/deg_d10_0006.jld2", "data")
@@ -17,45 +22,30 @@ function gen(n, A, β, X)
 end
 
 # Log Likelihood
-function log_lkhd(X, y, n, β, A) 
+function log_lkhd(n, A, β, X, y) 
     ŷ = gen(n,A,β,X)
     return -sum(logpdf.(Normal(0,1),y-ŷ))
 end
 
-# Find Coefficents
-function Coeffs(nvar, n, A, X, y, β̂)
-    # res = optimize(β -> log_lkhd(X, y, n, β, A), [0.,0.,0.], LBFGS(), autodiff=:forward, Optim.Options(allow_f_increases=true))
-    # return Optim.minimizer(res)
-    spgbox!(β -> log_lkhd(X, y, n, β, A),(g,β) -> ForwardDiff.gradient!(g,β -> log_lkhd(X, y, n, β, A),β), β̂)#, nitmax = 200)
+# Maximum Likelihood Estimation (Mutated in-place)
+function Coeffs!(β̂, n, A, X, y, nvar)
+    spgbox!(β -> log_lkhd(n, A, β, X, y),(g,β) -> ForwardDiff.gradient!(g,β -> log_lkhd(n, A, β, X, y),β), β̂, nitmax = 100)
 end
 
 
-# Main Call
+# Initialise variables
 nvar,n = 2,201
 A = 0. # Noise Amplitude
 β̂ = zeros(3)
 
-# X = rand(Normal(0,1), n, nvar-1)
-#y = gen(n,A,β,X)
-# β̂ = Coeffs(nvar,n,A,β,X,y)
-Coeffs(nvar,n,A,y[:,1],y[:,2],β̂)
-
-# @benchmark Coeffs(nvar,n,A,β,X,y,β̂)
-# bₜ = @benchmarkable Coeffs(a,b,c,d,e,f,g) setup = begin;
-#     a = copy($nvar);
-#     b = copy($n);
-#     c = copy($A);
-#     d = copy($β);
-#     e = copy($X);
-#     f = copy($y);
-#     g = copy($β̂);
-# end
-# run(bₜ, evals=100, seconds=10, samples=1000) 
+# MLE + Benchmark
+@show @benchmark Coeffs!(β̂, n, A, y[:,1], y[:,2], nvar)
 
 # Assess Results
 ŷ = gen(n,0.,β̂,y[:,1])
 ψ = sortslices([y[:,1][:] ŷ[:]], dims=1)
 
+# Plot using PGFPlots for Presentation
 κ = distinguishable_colors(10)
 @pgf Axis(
     {
